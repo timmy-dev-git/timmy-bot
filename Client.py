@@ -31,6 +31,11 @@ OnGuildUpdateFn         = Callable[[discord.Guild, discord.Guild], Awaitable[Non
 
 OnBanFn                 = Callable[[discord.Guild, discord.User], Awaitable[None]]
 
+BackgroundProcess       = Callable[[], Awaitable[None]]
+
+async def BackgroundFuncs():
+    pass
+
 class Event:
     async def __init__(
         self,
@@ -67,87 +72,22 @@ class Event:
 
         on_member_ban_fn         : OnBanFn,
         on_member_unban_fn       : OnBanFn,
+
+        background_process       : BackgroundProcess,
     ) -> None:
 
         intents = discord.Intents.all()
         intents.presences = False
         client = discord.Client(intents=intents)
 
-        @client.event
-        async def on_connect():
-            await on_connect_fn()
-        @client.event
-        async def on_disconnect():
-            await on_disconnect_fn()
-        @client.event
-        async def on_ready():
-            await on_ready_fn(client)
-        @client.event
-        async def on_message(message):
-            await on_message_fn(message)
-        @client.event
-        async def on_message_edit(before, after):
-            await on_message_edit_fn(before, after)
-        @client.event
-        async def on_message_delete(message):
-            await on_message_delete_fn(message)
-        @client.event
-        async def on_bulk_message_delete(messages):
-            await on_bulk_message_delete_fn(messages)
-        @client.event
-        async def on_member_join(member):
-            await on_member_join_fn(member)
-        @client.event
-        async def on_member_remove(member):
-            await on_member_remove_fn(member)
-        @client.event
-        async def on_member_update(before, after):
-            await on_member_update_fn(before, after)
-        @client.event
-        async def on_voice_state_update(member, before, after):
-            await on_voice_state_update_fn(member, before, after)
-        @client.event
-        async def on_reaction_add(reaction, user):
-            await on_reaction_add_fn(reaction, user)
-        @client.event
-        async def on_reaction_remove(reaction, user):
-            await on_reaction_remove_fn(reaction, user)
-        @client.event
-        async def on_guild_channel_create(channel):
-            await on_channel_create_fn(channel)
-        @client.event
-        async def on_guild_channel_delete(channel):
-            await on_channel_delete_fn(channel)
-        @client.event
-        async def on_guild_channel_update(before, after):
-            await on_channel_update_fn(before, after)
-        @client.event
-        async def on_guild_role_create(role):
-            await on_role_create_fn(role)
-        @client.event
-        async def on_guild_role_delete(role):
-            await on_role_delete_fn(role)
-        @client.event
-        async def on_guild_role_update(before, after):
-            await on_role_update_fn(before, after)
-        @client.event
-        async def on_guild_join(guild):
-            await on_guild_join_fn(guild)
-        @client.event
-        async def on_guild_remove(guild):
-            await on_guild_remove_fn(guild)
-        @client.event
-        async def on_guild_update(before, after):
-            await on_guild_update_fn(before, after)
-        @client.event
-        async def on_member_ban(guild, user):
-            await on_member_ban_fn(guild, user)
-        @client.event
-        async def on_member_unban(guild, user):
-            await on_member_unban_fn(guild, user)
+        await BackgroundFuncs()
+        asyncio.create_task(BackgroundFuncs())
 
-        client.run(os.environ["TOKEN"])
-        await client.start(
-            token     = os.environ["TOKEN"],
-            reconnect = True               ,
-        )
+        async def main_loop():
+            asyncio.create_task(background_process())
+            try:
+                await client.start(os.environ["TOKEN"])
+            finally:
+                await client.close()
+
+        asyncio.run(main=main_loop())

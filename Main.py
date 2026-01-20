@@ -1,15 +1,19 @@
+from asyncio import sleep
+import os
+import time
 from Event import Event
+from Data import Data
 import discord
-from typing import List
+from typing import List, Dict
 
+_active_voice_sessions: Dict[int, tuple[int, float]] = {}
 
-# -------- Core lifecycle --------
-
+# Starting/Stopping.
 async def on_connect() -> None:
-    print("Connected to Discord gateway")
+    print("Connected to Discord API.")
 
 async def on_disconnect() -> None:
-    print("Disconnected from Discord gateway")
+    print("Disconnected from Discord API.")
 
 async def on_ready(client: discord.Client) -> None:
     print("Started bot:")
@@ -18,16 +22,24 @@ async def on_ready(client: discord.Client) -> None:
         print(f"  Name:    {client.user.name}")
         print(f"  Mention: {client.user.mention}")
 
-# -------- Messages --------
-
+# Messages.
 async def on_message(message: discord.Message) -> None:
     print("Message sent:")
     print(f"  Author:  {message.author}")
     print(f"  Channel: {message.channel}")
     print(f"  Content: {message.content}")
-    if message.thread:
-        print(f"  Thread:  {message.thread}")
-    print("")
+
+    # if message.channel == "":
+    #     file: Data = Data(
+    #         author_id = message.author.id,
+    #         category  = "",
+    #     )
+
+    #     file.overwrite(
+    #         {
+    #             "": "",
+    #         }
+    #     )
 
 async def on_message_edit(before: discord.Message, after: discord.Message) -> None:
     print("Message edited:")
@@ -42,12 +54,11 @@ async def on_message_delete(message: discord.Message) -> None:
     print(f"  Content: {message.content}")
 
 async def on_bulk_message_delete(messages: List[discord.Message]) -> None:
-    print(f"Bulk delete: {len(messages)} messages")
+    print(f"Bulk message delete: {len(messages)} messages")
     for msg in messages:
-        print(f"  {msg.author}: {msg.content}")
+        await on_message(msg)
 
-# -------- Members --------
-
+# Members.
 async def on_member_join(member: discord.Member) -> None:
     print("Member joined:")
     print(f"  ID:      {member.id}")
@@ -60,6 +71,10 @@ async def on_member_remove(member: discord.Member) -> None:
     print(f"  Name:    {member.name}")
     print(f"  Mention: {member.mention}")
 
+    user_dir: str = os.path.join("data/users/", str(member.id))
+    if os.path.exists(user_dir):
+        os.remove(user_dir)
+
 async def on_member_update(before: discord.Member, after: discord.Member) -> None:
     print("Member updated:")
     print(f"  User: {after}")
@@ -68,20 +83,57 @@ async def on_member_update(before: discord.Member, after: discord.Member) -> Non
     if before.roles != after.roles:
         print("  Roles changed")
 
-# -------- Voice --------
-
+# Voice.
 async def on_voice_state_update(
     member: discord.Member,
     before: discord.VoiceState,
     after: discord.VoiceState,
 ) -> None:
-    print("Voice state update:")
-    print(f"  User: {member}")
-    print(f"  From: {before.channel}")
-    print(f"  To:   {after.channel}")
+    now = time.time()
 
-# -------- Reactions --------
+    data = Data(
+        author_id=member.id,
+        category="stats",
+    )
 
+    try:
+        stats = data.read()
+    except FileNotFoundError:
+        stats = {}
+
+    vc_stats = stats.get("voice_channel_time", {})  # channel_id -> {name, seconds}
+
+    member_id = member.id
+
+    # ---------- LEFT a voice channel ----------
+    if before.channel is not None:
+        session = _active_voice_sessions.pop(member_id, None)
+
+        if session is not None:
+            channel_id, joined_at = session
+            elapsed = now - joined_at
+
+            entry = vc_stats.get(str(channel_id), {
+                "name": before.channel.name,
+                "seconds": 0.0,
+            })
+
+            entry["seconds"] += elapsed
+            entry["name"] = before.channel.name  # keep name fresh
+            vc_stats[str(channel_id)] = entry
+
+    # ---------- JOINED a voice channel ----------
+    if after.channel is not None and (before.channel is None or before.channel.id != after.channel.id):
+        _active_voice_sessions[member_id] = (
+            after.channel.id,
+            now,
+        )
+
+    stats["voice_channel_time"] = vc_stats
+    data.overwrite(stats)
+
+
+# Reactions.
 async def on_reaction_add(
     reaction: discord.Reaction,
     user: discord.User,
@@ -99,8 +151,7 @@ async def on_reaction_remove(
     print(f"  User:  {user}")
     print(f"  Emoji: {reaction.emoji}")
 
-# -------- Channels --------
-
+# Channels.
 async def on_guild_channel_create(channel: discord.abc.GuildChannel) -> None:
     print("Channel created:")
     print(f"  Name: {channel.name}")
@@ -119,8 +170,7 @@ async def on_guild_channel_update(
     print(f"  Before: {before.name}")
     print(f"  After:  {after.name}")
 
-# -------- Roles --------
-
+# Roles.
 async def on_guild_role_create(role: discord.Role) -> None:
     print("Role created:")
     print(f"  Name: {role.name}")
@@ -136,8 +186,7 @@ async def on_guild_role_update(before: discord.Role, after: discord.Role) -> Non
     print(f"  Before: {before.name}")
     print(f"  After:  {after.name}")
 
-# -------- Guild --------
-
+# Guilds.
 async def on_guild_join(guild: discord.Guild) -> None:
     print("Joined guild:")
     print(f"  Name: {guild.name}")
@@ -153,8 +202,7 @@ async def on_guild_update(before: discord.Guild, after: discord.Guild) -> None:
     print(f"  Before: {before.name}")
     print(f"  After:  {after.name}")
 
-# -------- Moderation --------
-
+# Moderation.
 async def on_member_ban(
     guild: discord.Guild,
     user: discord.User,
@@ -171,38 +219,47 @@ async def on_member_unban(
     print(f"  Guild: {guild.name}")
     print(f"  User:  {user}")
 
+async def BackgroundProcess(
+) -> None:
+    print("Started!")
+    _i: int = 0
+    while(True):
+        print(f"{_i}")
+        _i += 1
+        await sleep(1)
+
 
 Event(
-    on_connect_fn=on_connect,
-    on_disconnect_fn=on_disconnect,
-    on_ready_fn=on_ready,
+    on_connect_fn             = on_connect,
+    on_disconnect_fn          = on_disconnect,
+    on_ready_fn               = on_ready,
 
-    on_message_fn=on_message,
-    on_message_edit_fn=on_message_edit,
-    on_message_delete_fn=on_message_delete,
-    on_bulk_message_delete_fn=on_bulk_message_delete,
+    on_message_fn             = on_message,
+    on_message_edit_fn        = on_message_edit,
+    on_message_delete_fn      = on_message_delete,
+    on_bulk_message_delete_fn = on_bulk_message_delete,
 
-    on_member_join_fn=on_member_join,
-    on_member_remove_fn=on_member_remove,
-    on_member_update_fn=on_member_update,
+    on_member_join_fn         = on_member_join,
+    on_member_remove_fn       = on_member_remove,
+    on_member_update_fn       = on_member_update,
 
-    on_voice_state_update_fn=on_voice_state_update,
+    on_voice_state_update_fn  = on_voice_state_update,
 
-    on_reaction_add_fn=on_reaction_add,
-    on_reaction_remove_fn=on_reaction_remove,
+    on_reaction_add_fn        = on_reaction_add,
+    on_reaction_remove_fn     = on_reaction_remove,
 
-    on_channel_create_fn=on_guild_channel_create,
-    on_channel_delete_fn=on_guild_channel_delete,
-    on_channel_update_fn=on_guild_channel_update,
+    on_channel_create_fn      = on_guild_channel_create,
+    on_channel_delete_fn      = on_guild_channel_delete,
+    on_channel_update_fn      = on_guild_channel_update,
 
-    on_role_create_fn=on_guild_role_create,
-    on_role_delete_fn=on_guild_role_delete,
-    on_role_update_fn=on_guild_role_update,
+    on_role_create_fn         = on_guild_role_create,
+    on_role_delete_fn         = on_guild_role_delete,
+    on_role_update_fn         = on_guild_role_update,
 
-    on_guild_join_fn=on_guild_join,
-    on_guild_remove_fn=on_guild_remove,
-    on_guild_update_fn=on_guild_update,
+    on_guild_join_fn          = on_guild_join,
+    on_guild_remove_fn        = on_guild_remove,
+    on_guild_update_fn        = on_guild_update,
 
-    on_member_ban_fn=on_member_ban,
-    on_member_unban_fn=on_member_unban,
+    on_member_ban_fn          = on_member_ban,
+    on_member_unban_fn        = on_member_unban,
 )
