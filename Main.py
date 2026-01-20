@@ -4,7 +4,7 @@ import time
 import discord
 from typing import List
 from Client import Client
-
+#
 # Starting/Stopping.
 async def on_connect() -> None:
     print("Connected to Discord API.")
