@@ -31,12 +31,12 @@ OnGuildUpdateFn         = Callable[[discord.Guild, discord.Guild], Awaitable[Non
 
 OnBanFn                 = Callable[[discord.Guild, discord.User], Awaitable[None]]
 
-BackgroundProcess       = Callable[[], Awaitable[None]]
+BackgroundProcess       = Callable[[]]
 
 async def BackgroundFuncs():
     pass
 
-class Event:
+class Client:
     async def __init__(
         self,
 

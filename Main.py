@@ -1,12 +1,9 @@
 from asyncio import sleep
 import os
 import time
-from Event import Event
-from Data import Data
 import discord
-from typing import List, Dict
-
-_active_voice_sessions: Dict[int, tuple[int, float]] = {}
+from typing import List
+from Client import Client
 
 # Starting/Stopping.
 async def on_connect() -> None:
@@ -28,18 +25,6 @@ async def on_message(message: discord.Message) -> None:
     print(f"  Author:  {message.author}")
     print(f"  Channel: {message.channel}")
     print(f"  Content: {message.content}")
-
-    # if message.channel == "":
-    #     file: Data = Data(
-    #         author_id = message.author.id,
-    #         category  = "",
-    #     )
-
-    #     file.overwrite(
-    #         {
-    #             "": "",
-    #         }
-    #     )
 
 async def on_message_edit(before: discord.Message, after: discord.Message) -> None:
     print("Message edited:")
@@ -89,49 +74,11 @@ async def on_voice_state_update(
     before: discord.VoiceState,
     after: discord.VoiceState,
 ) -> None:
-    now = time.time()
-
-    data = Data(
-        author_id=member.id,
-        category="stats",
-    )
-
-    try:
-        stats = data.read()
-    except FileNotFoundError:
-        stats = {}
-
-    vc_stats = stats.get("voice_channel_time", {})  # channel_id -> {name, seconds}
-
-    member_id = member.id
-
-    # ---------- LEFT a voice channel ----------
-    if before.channel is not None:
-        session = _active_voice_sessions.pop(member_id, None)
-
-        if session is not None:
-            channel_id, joined_at = session
-            elapsed = now - joined_at
-
-            entry = vc_stats.get(str(channel_id), {
-                "name": before.channel.name,
-                "seconds": 0.0,
-            })
-
-            entry["seconds"] += elapsed
-            entry["name"] = before.channel.name  # keep name fresh
-            vc_stats[str(channel_id)] = entry
-
-    # ---------- JOINED a voice channel ----------
-    if after.channel is not None and (before.channel is None or before.channel.id != after.channel.id):
-        _active_voice_sessions[member_id] = (
-            after.channel.id,
-            now,
-        )
-
-    stats["voice_channel_time"] = vc_stats
-    data.overwrite(stats)
-
+    print("Voice state changed:")
+    print(f"  User:   {member.name}")
+    print(f"  ID:     {member.id}")
+    print(f"  Before: {before.channel}")
+    print(f"  After:  {after.channel}")
 
 # Reactions.
 async def on_reaction_add(
@@ -224,12 +171,12 @@ async def BackgroundProcess(
     print("Started!")
     _i: int = 0
     while(True):
-        print(f"{_i}")
+        print(f"{time.time()}")
         _i += 1
         await sleep(1)
 
 
-Event(
+Client(
     on_connect_fn             = on_connect,
     on_disconnect_fn          = on_disconnect,
     on_ready_fn               = on_ready,
@@ -262,4 +209,6 @@ Event(
 
     on_member_ban_fn          = on_member_ban,
     on_member_unban_fn        = on_member_unban,
+
+    background_process        = BackgroundProcess,
 )
