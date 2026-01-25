@@ -1,3 +1,6 @@
-Push.sh
-.venv
 TODO.md
+Push.sh
+Build.sh
+.venv
+__pycache__
+data/
